@@ -148,5 +148,25 @@ router.get("/writer/sales/:email", verifyToken, verifyWriter, async (req, res) =
 
   res.send(sales);
 });
+router.get("/purchases/check/:email/:ebookId", verifyToken, async (req, res) => {
+  const db = await connectDB();
+  const purchasesCollection = db.collection("purchases");
+
+  const { email, ebookId } = req.params;
+
+  if (req.decoded.email !== email) {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+
+  const purchase = await purchasesCollection.findOne({
+    buyerEmail: email,
+    ebookId,
+    status: "paid",
+  });
+
+  res.send({
+    purchased: !!purchase,
+  });
+});
 
 module.exports = router;
