@@ -8,6 +8,11 @@ const seedAdmin = require("./utils/seedAdmin");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 
+const ebookRoutes = require("./routes/ebookRoutes");
+const bookmarkRoutes = require("./routes/bookmarkRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -22,7 +27,10 @@ app.use(express.json());
 
 app.use(authRoutes);
 app.use(userRoutes);
-
+app.use(ebookRoutes);
+app.use(bookmarkRoutes);
+app.use(paymentRoutes);
+app.use(adminRoutes);
 app.get("/", (req, res) => {
   res.send("Fable server is running");
 });
