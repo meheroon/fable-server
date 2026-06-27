@@ -54,63 +54,145 @@ router.post("/create-checkout-session", verifyToken, async (req, res) => {
   res.send({ url: session.url });
 });
 
+// router.post("/payment-success", verifyToken, async (req, res) => {
+//   const db = await connectDB();
+
+//   const ebooksCollection = db.collection("ebooks");
+//   const purchasesCollection = db.collection("purchases");
+//   const transactionsCollection = db.collection("transactions");
+
+//   const { sessionId } = req.body;
+
+//   const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+//   if (session.payment_status !== "paid") {
+//     return res.status(400).send({ message: "Payment not completed" });
+//   }
+
+//   const existingPurchase = await purchasesCollection.findOne({
+//     transactionId: session.payment_intent,
+//   });
+
+//   if (existingPurchase) {
+//     return res.send({ message: "Payment already saved" });
+//   }
+
+//   const ebookId = session.metadata.ebookId;
+
+//   const ebook = await ebooksCollection.findOne({
+//     _id: new ObjectId(ebookId),
+//   });
+
+//   const purchase = {
+//     ebookId,
+//     ebookTitle: ebook.title,
+//     buyerEmail: session.metadata.buyerEmail,
+//     writerEmail: session.metadata.writerEmail,
+//     price: ebook.price,
+//     transactionId: session.payment_intent,
+//     status: "paid",
+//     purchaseDate: new Date(),
+//   };
+
+//   const result = await purchasesCollection.insertOne(purchase);
+
+//   await transactionsCollection.insertOne({
+//     transactionId: session.payment_intent,
+//     type: "purchase",
+//     email: session.metadata.buyerEmail,
+//     amount: ebook.price,
+//     ebookId,
+//     date: new Date(),
+//   });
+
+//   await ebooksCollection.updateOne(
+//     { _id: new ObjectId(ebookId) },
+//     { $inc: { soldCount: 1 } }
+//   );
+
+//   res.send(result);
+// });
 router.post("/payment-success", verifyToken, async (req, res) => {
-  const db = await connectDB();
+  try {
+    const db = await connectDB();
 
-  const ebooksCollection = db.collection("ebooks");
-  const purchasesCollection = db.collection("purchases");
-  const transactionsCollection = db.collection("transactions");
+    const ebooksCollection = db.collection("ebooks");
+    const purchasesCollection = db.collection("purchases");
+    const transactionsCollection = db.collection("transactions");
 
-  const { sessionId } = req.body;
+    const sessionId = req.body?.sessionId || req.query?.session_id;
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (!sessionId) {
+      return res.status(400).send({ message: "Session ID is required" });
+    }
 
-  if (session.payment_status !== "paid") {
-    return res.status(400).send({ message: "Payment not completed" });
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.payment_status !== "paid") {
+      return res.status(400).send({ message: "Payment not completed" });
+    }
+
+    const existingPurchase = await purchasesCollection.findOne({
+      transactionId: session.payment_intent,
+    });
+
+    if (existingPurchase) {
+      return res.send({
+        message: "Payment already saved",
+        acknowledged: true,
+        insertedId: existingPurchase._id,
+      });
+    }
+
+    const ebookId = session.metadata?.ebookId;
+
+    if (!ebookId) {
+      return res.status(400).send({ message: "Ebook ID missing from Stripe metadata" });
+    }
+
+    const ebook = await ebooksCollection.findOne({
+      _id: new ObjectId(ebookId),
+    });
+
+    if (!ebook) {
+      return res.status(404).send({ message: "Ebook not found" });
+    }
+
+    const purchase = {
+      ebookId,
+      ebookTitle: ebook.title,
+      buyerEmail: session.metadata.buyerEmail,
+      writerEmail: session.metadata.writerEmail,
+      price: Number(ebook.price),
+      transactionId: session.payment_intent,
+      status: "paid",
+      purchaseDate: new Date(),
+    };
+
+    const result = await purchasesCollection.insertOne(purchase);
+
+    await transactionsCollection.insertOne({
+      transactionId: session.payment_intent,
+      type: "purchase",
+      email: session.metadata.buyerEmail,
+      amount: Number(ebook.price),
+      ebookId,
+      date: new Date(),
+    });
+
+    await ebooksCollection.updateOne(
+      { _id: new ObjectId(ebookId) },
+      { $inc: { soldCount: 1 } }
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error("Payment success save error:", error);
+    res.status(500).send({
+      message: "Payment saved failed",
+      error: error.message,
+    });
   }
-
-  const existingPurchase = await purchasesCollection.findOne({
-    transactionId: session.payment_intent,
-  });
-
-  if (existingPurchase) {
-    return res.send({ message: "Payment already saved" });
-  }
-
-  const ebookId = session.metadata.ebookId;
-
-  const ebook = await ebooksCollection.findOne({
-    _id: new ObjectId(ebookId),
-  });
-
-  const purchase = {
-    ebookId,
-    ebookTitle: ebook.title,
-    buyerEmail: session.metadata.buyerEmail,
-    writerEmail: session.metadata.writerEmail,
-    price: ebook.price,
-    transactionId: session.payment_intent,
-    status: "paid",
-    purchaseDate: new Date(),
-  };
-
-  const result = await purchasesCollection.insertOne(purchase);
-
-  await transactionsCollection.insertOne({
-    transactionId: session.payment_intent,
-    type: "purchase",
-    email: session.metadata.buyerEmail,
-    amount: ebook.price,
-    ebookId,
-    date: new Date(),
-  });
-
-  await ebooksCollection.updateOne(
-    { _id: new ObjectId(ebookId) },
-    { $inc: { soldCount: 1 } }
-  );
-
-  res.send(result);
 });
 
 router.get("/purchases/:email", verifyToken, async (req, res) => {
